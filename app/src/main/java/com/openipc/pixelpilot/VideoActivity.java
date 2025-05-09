@@ -24,6 +24,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.text.format.Formatter;
+import android.text.InputType;
 import android.text.SpannableString;
 import android.text.method.LinkMovementMethod;
 import android.text.util.Linkify;
@@ -39,6 +40,7 @@ import android.webkit.HttpAuthHandler;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.PopupMenu;
+import android.widget.EditText;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -1450,11 +1452,48 @@ public class VideoActivity extends AppCompatActivity implements IVideoParamsChan
         }
         dialog.show();
 
+
         view.setWebViewClient(new WebViewClient() {
             @Override
-            public void onReceivedHttpAuthRequest(
-                    WebView view, HttpAuthHandler handler, String host, String realm) {
-                handler.proceed("root", "12345");
+            public void onReceivedHttpAuthRequest(WebView view, HttpAuthHandler handler, String host, String realm) {
+                if (handler.useHttpAuthUsernamePassword()) {
+                    // If the WebView has a saved username and password, try to use it automatically
+                    String[] credentials = view.getHttpAuthUsernamePassword(host, realm);
+                    if (credentials != null && credentials.length == 2) {
+                        handler.proceed(credentials[0], credentials[1]);
+                        return;
+                    }
+                }
+                String[] defaultCred = view.getHttpAuthUsernamePassword(host, realm);
+                if (defaultCred == null) {
+                    // Try root/12345 first
+                    view.setHttpAuthUsernamePassword(host, realm, "root", "12345");
+                    handler.proceed("root", "12345");
+                } else {
+                    // Need to input password
+                    AlertDialog.Builder builder = new AlertDialog.Builder(view.getContext());
+                    builder.setTitle("Password verification is required.\n\n");
+                    builder.setMessage("Input password:");
+
+                    final EditText passwordInput = new EditText(view.getContext());
+                    passwordInput.setHint("password");
+                    passwordInput.setInputType(InputType.TYPE_CLASS_TEXT);
+
+                    builder.setView(passwordInput);
+
+                    builder.setPositiveButton("Apply", (dialog, which) -> {
+                        String pass = passwordInput.getText().toString();
+                        view.setHttpAuthUsernamePassword(host, realm, "root", pass); // save password
+                        handler.proceed("root", pass);
+                    });
+
+                    builder.setNegativeButton("Cancel", (dialog, which) -> {
+                        handler.cancel();
+                    });
+
+                    builder.setCancelable(false);
+                    builder.show();
+                }
             }
         });
     }
