@@ -31,6 +31,7 @@ import android.text.util.Linkify;
 import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.util.Log;
+import android.util.TypedValue;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.SubMenu;
@@ -379,9 +380,6 @@ public class VideoActivity extends AppCompatActivity implements IVideoParamsChan
      * Configures both the margin (binding.seekBar) and distance (binding.distanceSeekBar) SeekBars.
      */
     private void configureVRSeekBars() {
-        // Rotate the first seekBar 180 degrees
-        binding.seekBar.setRotation(180);
-
         // Retrieve saved progress for both seekBars
         SharedPreferences sharedPreferences = getSharedPreferences("SeekBarPrefs", MODE_PRIVATE);
         SharedPreferences sharedPreferencesd = getSharedPreferences("SeekBarPrefsD", MODE_PRIVATE);
@@ -394,41 +392,51 @@ public class VideoActivity extends AppCompatActivity implements IVideoParamsChan
         binding.distanceSeekBar.setProgress(savedDistanceProgress);
 
         // Make them visible initially
+        binding.zoomLabel.setVisibility(View.VISIBLE);
+        binding.distanceLabel.setVisibility(View.VISIBLE);
         binding.seekBar.setVisibility(View.VISIBLE);
         binding.distanceSeekBar.setVisibility(View.VISIBLE);
 
         // Apply initial constraints
-        applyVRMargins(savedProgress);
+        applyVRZoom(savedProgress);
         applyVRDistance(savedDistanceProgress);
     }
 
     /**
      * Manages hiding and showing the SeekBars after some delay or upon user touch.
      */
-    private void configureVRSeekBarVisibility() {
-        // Hide SeekBars after 3 seconds
-        handler.postDelayed(() -> {
+    private final Runnable hideSeekBarsRunnable = new Runnable() {
+        @Override
+        public void run() {
+            binding.zoomLabel.setVisibility(View.GONE);
+            binding.distanceLabel.setVisibility(View.GONE);
             binding.seekBar.setVisibility(View.GONE);
             binding.distanceSeekBar.setVisibility(View.GONE);
             updateViewRatio(R.id.surfaceViewLeft, lastVideoW, lastVideoH);
             updateViewRatio(R.id.surfaceViewRight, lastVideoW, lastVideoH);
-        }, 3000);
+        }
+    };
 
-        // Show SeekBars when the layout is touched
+    private void configureVRSeekBarVisibility() {
+        // Initially hide SeekBars after 3 seconds
+        handler.postDelayed(hideSeekBarsRunnable, 3000);
+
         binding.frameLayout.setOnTouchListener((v, event) -> {
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                // Show SeekBars when the screen is touched
+                binding.zoomLabel.setVisibility(View.VISIBLE);
+                binding.distanceLabel.setVisibility(View.VISIBLE);
                 binding.seekBar.setVisibility(View.VISIBLE);
                 binding.distanceSeekBar.setVisibility(View.VISIBLE);
-                handler.postDelayed(() -> {
-                    binding.seekBar.setVisibility(View.GONE);
-                    binding.distanceSeekBar.setVisibility(View.GONE);
-                    updateViewRatio(R.id.surfaceViewLeft, lastVideoW, lastVideoH);
-                    updateViewRatio(R.id.surfaceViewRight, lastVideoW, lastVideoH);
-                }, 3000);
+
+                // Cancel any pending hide tasks and restart the timer
+                handler.removeCallbacks(hideSeekBarsRunnable);
+                handler.postDelayed(hideSeekBarsRunnable, 3000);
             }
             return false;
         });
     }
+
 
     /**
      * Sets listeners on the SeekBars to adjust margins and distances in real time.
@@ -437,55 +445,85 @@ public class VideoActivity extends AppCompatActivity implements IVideoParamsChan
         binding.seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                applyVRMargins(progress);
+                applyVRZoom(progress);
                 saveSeekBarValue("SeekBarPrefs", "seekBarProgress", progress);
+
+                // 用户正在调整，重置隐藏计时器
+                handler.removeCallbacks(hideSeekBarsRunnable);
+                handler.postDelayed(hideSeekBarsRunnable, 3000);
             }
 
             @Override
             public void onStartTrackingTouch(SeekBar seekBar) {
+                // 用户开始拖动，取消隐藏任务
+                handler.removeCallbacks(hideSeekBarsRunnable);
             }
 
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
+                // 用户松手，重启隐藏任务
+                handler.postDelayed(hideSeekBarsRunnable, 3000);
             }
         });
 
         binding.distanceSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
-            public void onProgressChanged(SeekBar distanceSeekBar, int progress, boolean fromUser) {
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 applyVRDistance(progress);
                 saveSeekBarValue("SeekBarPrefsD", "distanceSeekBarProgress", progress);
+
+                handler.removeCallbacks(hideSeekBarsRunnable);
+                handler.postDelayed(hideSeekBarsRunnable, 3000);
             }
 
             @Override
             public void onStartTrackingTouch(SeekBar seekBar) {
+                handler.removeCallbacks(hideSeekBarsRunnable);
             }
 
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
+                handler.postDelayed(hideSeekBarsRunnable, 3000);
             }
         });
     }
 
     /**
-     * Adjusts margins for left/right SurfaceViews based on progress.
+     * Scales the SurfaceViews based on progress value.
      */
-    private void applyVRMargins(int progress) {
-        int margin = progress * 20; // Adjust multiplier as needed
-        constraintSet.setMargin(R.id.surfaceViewLeft, ConstraintSet.START, margin);
-        constraintSet.setMargin(R.id.surfaceViewRight, ConstraintSet.END, margin);
-        constraintSet.applyTo(constraintLayout);
+    private void applyVRZoom(int progress) {
+        float minScale = 0.5f;
+        float maxScale = 1.5f;
+        float scale = minScale + (progress / 100.0f) * (maxScale - minScale);
+        binding.surfaceViewLeft.setScaleX(scale);
+        binding.surfaceViewLeft.setScaleY(scale);
+        binding.surfaceViewRight.setScaleX(scale);
+        binding.surfaceViewRight.setScaleY(scale);
     }
+
 
     /**
      * Adjusts size for left/right SurfaceViews based on progress.
      */
     private void applyVRDistance(int progress) {
-        int size = progress * 20; // Adjust multiplier as needed
-        constraintSet.setMargin(R.id.surfaceViewLeft, ConstraintSet.END, size);
-        constraintSet.setMargin(R.id.surfaceViewRight, ConstraintSet.START, size);
-        constraintSet.applyTo(constraintLayout);
+        // 假设最大间距是100dp，最小间距是0dp
+        int maxMarginDp = 100;
+        int minMarginDp = 0;
+
+        int marginDp = minMarginDp + (maxMarginDp - minMarginDp) * progress / 100;
+        int marginPx = (int) TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, marginDp, getResources().getDisplayMetrics());
+
+        ConstraintLayout.LayoutParams leftParams = (ConstraintLayout.LayoutParams) binding.surfaceViewLeft.getLayoutParams();
+        ConstraintLayout.LayoutParams rightParams = (ConstraintLayout.LayoutParams) binding.surfaceViewRight.getLayoutParams();
+
+        leftParams.setMarginEnd(marginPx);
+        rightParams.setMarginStart(marginPx);
+
+        binding.surfaceViewLeft.setLayoutParams(leftParams);
+        binding.surfaceViewRight.setLayoutParams(rightParams);
     }
+
 
     /**
      * Saves the SeekBar progress value to SharedPreferences.
@@ -1346,7 +1384,7 @@ public class VideoActivity extends AppCompatActivity implements IVideoParamsChan
                 binding.wifiMessage.setVisibility(View.GONE);
             }
             String info = "%dx%d@%.0f " + (decodingInfo.nCodec == 1 ? " H265 " : " H264 ")
-                    + (decodingInfo.currentKiloBitsPerSecond > 1000 ? " %.1fMbps " : " %.1fKpbs ")
+                    + (decodingInfo.currentKiloBitsPerSecond > 1000 ? " %.1fM " : " %.1fK ")
                     + " %.1fms";
             binding.tvVideoStats.setText(String.format(Locale.US, info,
                     lastVideoW, lastVideoH, decodingInfo.currentFPS,
@@ -1387,19 +1425,19 @@ public class VideoActivity extends AppCompatActivity implements IVideoParamsChan
                     binding.pcLinkStat.setCenterText("" + data.count_p_fec_recovered);
                     binding.pcLinkStat.invalidate();
 
-                    int color = getColor(R.color.colorGreenBg);
+                    int color = getColor(R.color.colorWhite);
                     if ((float) data.count_p_fec_recovered / data.count_p_all > 0.2) {
                         color = getColor(R.color.colorYellowBg);
                     }
                     if (data.count_p_lost > 0) {
                         color = getColor(R.color.colorRedBg);
                     }
-                    binding.imgLinkStatus.setImageTintList(ColorStateList.valueOf(color));
+                    binding.tvLinkStatus.setTextColor(color);
                     binding.tvLinkStatus.setText(String.format("O%sD%sR%sL%s",
                             paddedDigits(data.count_p_outgoing, 6),
                             paddedDigits(data.count_p_dec_ok, 6),
-                            paddedDigits(data.count_p_fec_recovered, 6),
-                            paddedDigits(data.count_p_lost, 6)));
+                            paddedDigits(data.count_p_fec_recovered, 3),
+                            paddedDigits(data.count_p_lost, 3)));
                 }
             } else {
                 binding.tvLinkStatus.setText("No wfb-ng data.");
