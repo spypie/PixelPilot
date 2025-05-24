@@ -1,4 +1,5 @@
-# PixelPilot
+# PixelPilotPlus
+This is an optimized (personelized) version of PixelPilot
 > [!IMPORTANT]
 > Warning, performance will heavily depend on your device's processing power.
 >

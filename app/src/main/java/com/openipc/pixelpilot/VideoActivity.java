@@ -992,7 +992,7 @@ public class VideoActivity extends AppCompatActivity implements IVideoParamsChan
 
         SpannableString message = new SpannableString(
                 "Version: " + versionName + "\n\n" +
-                        "Visit releases page:\nhttps://github.com/OpenIPC/PixelPilot/releases"
+                        "Visit releases page:\nhttps://github.com/spypie/PixelPilot/releases"
         );
 
         // Make the URL clickable
